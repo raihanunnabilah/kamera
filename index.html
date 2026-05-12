@@ -1,0 +1,259 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Mood Learning System - Stabil</title>
+
+    <!-- Face API -->
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
+
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        text-align: center;
+        background-color: #f4f4f4;
+        transition: background 0.5s ease;
+      }
+
+      .container {
+        width: 80%;
+        margin: auto;
+        background: white;
+        padding: 20px;
+        border-radius: 12px;
+        margin-top: 20px;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      }
+
+      video {
+        border-radius: 12px;
+        margin-top: 10px;
+        border: 3px solid #ddd;
+      }
+
+      .mood-box {
+        margin-top: 20px;
+        padding: 15px;
+        font-size: 24px;
+        font-weight: bold;
+        border-radius: 10px;
+        background: #f1f1f1;
+      }
+
+      .content {
+        margin-top: 20px;
+        padding: 15px;
+        border-radius: 10px;
+        background: #eee;
+        font-size: 18px;
+      }
+
+      button {
+        padding: 12px 24px;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        margin: 5px;
+        font-size: 16px;
+      }
+
+      button:hover {
+        background: #0056b3;
+      }
+
+      .status {
+        margin-top: 10px;
+        color: gray;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <h1>Mood-Based Learning System</h1>
+
+      <button onclick="startCamera()">Aktifkan Kamera</button>
+
+      <div class="status" id="statusText">
+        Menunggu kamera...
+      </div>
+
+      <br />
+
+      <video id="video" width="400" autoplay muted></video>
+
+      <div class="mood-box" id="moodText">
+        Mood Stabil: -
+      </div>
+
+      <div class="content" id="contentArea">
+        Materi akan muncul di sini
+      </div>
+    </div>
+
+    <script>
+      const video = document.getElementById("video");
+
+      let moodHistory = [];
+      let stableMood = "-";
+
+      // ======================================================
+      // LOAD MODEL
+      // ======================================================
+
+      async function loadModels() {
+        document.getElementById("statusText").innerText =
+          "Loading AI model...";
+
+        await faceapi.nets.tinyFaceDetector.loadFromUri(
+          "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/"
+        );
+
+        await faceapi.nets.faceExpressionNet.loadFromUri(
+          "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/"
+        );
+
+        document.getElementById("statusText").innerText =
+          "Model berhasil dimuat";
+      }
+
+      loadModels();
+
+      // ======================================================
+      // START CAMERA
+      // ======================================================
+
+      async function startCamera() {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+          });
+
+          video.srcObject = stream;
+
+          document.getElementById("statusText").innerText =
+            "Kamera aktif";
+
+          // Deteksi tiap 2 detik
+          setInterval(detectMood, 2000);
+
+        } catch (error) {
+          alert("Kamera tidak bisa diakses");
+        }
+      }
+
+      // ======================================================
+      // DETECT MOOD
+      // ======================================================
+
+      async function detectMood() {
+        const detection = await faceapi
+          .detectSingleFace(
+            video,
+            new faceapi.TinyFaceDetectorOptions()
+          )
+          .withFaceExpressions();
+
+        if (!detection) {
+          document.getElementById("statusText").innerText =
+            "Wajah tidak terdeteksi";
+          return;
+        }
+
+        const expressions = detection.expressions;
+
+        // Cari ekspresi terbesar
+        let detectedMood = Object.keys(expressions).reduce((a, b) =>
+          expressions[a] > expressions[b] ? a : b
+        );
+
+        // ======================================================
+        // NORMALISASI MOOD
+        // ======================================================
+
+        if (detectedMood === "happy") {
+          detectedMood = "happy";
+        } else if (
+          detectedMood === "sad" ||
+          detectedMood === "fearful"
+        ) {
+          detectedMood = "sad";
+        } else {
+          detectedMood = "tired";
+        }
+
+        // ======================================================
+        // STABILIZER
+        // ======================================================
+        // Mood harus muncul beberapa kali
+        // baru dianggap berubah
+        // ======================================================
+
+        moodHistory.push(detectedMood);
+
+        // simpan hanya 5 data terakhir
+        if (moodHistory.length > 5) {
+          moodHistory.shift();
+        }
+
+        // hitung jumlah mood
+        const count = {};
+
+        moodHistory.forEach((mood) => {
+          count[mood] = (count[mood] || 0) + 1;
+        });
+
+        // cari mood terbanyak
+        let mostFrequentMood = detectedMood;
+        let max = 0;
+
+        for (let mood in count) {
+          if (count[mood] > max) {
+            max = count[mood];
+            mostFrequentMood = mood;
+          }
+        }
+
+        // Mood baru diterapkan jika muncul minimal 3x
+        if (max >= 3 && stableMood !== mostFrequentMood) {
+          stableMood = mostFrequentMood;
+
+          updateUI(stableMood);
+        }
+
+        document.getElementById("statusText").innerText =
+          "Deteksi berjalan stabil...";
+      }
+
+      // ======================================================
+      // UPDATE UI
+      // ======================================================
+
+      function updateUI(mood) {
+        document.getElementById("moodText").innerText =
+          "Mood Stabil: " + mood;
+
+        const content = document.getElementById("contentArea");
+
+        if (mood === "happy") {
+          document.body.style.backgroundColor = "#d4edda";
+          content.innerHTML =
+            "<h3>Mode Semangat</h3><p>Materi lengkap + latihan soal tingkat lanjut.</p>";
+        }
+
+        else if (mood === "sad") {
+          document.body.style.backgroundColor = "#f8d7da";
+          content.innerHTML =
+            "<h3>Mode Santai</h3><p>Video pembelajaran singkat dan penjelasan ringan.</p>";
+        }
+
+        else if (mood === "tired") {
+          document.body.style.backgroundColor = "#fff3cd";
+          content.innerHTML =
+            "<h3>Mode Ringan</h3><p>Ringkasan materi dan poin-poin penting.</p>";
+        }
+      }
+    </script>
+  </body>
+</html>
